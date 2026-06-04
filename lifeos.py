@@ -10,7 +10,7 @@ st.set_page_config(
 
 if "state" not in st.session_state:
     st.session_state.state = {
-        "name": "Kavish",
+        "name": "user",
         "goals": [
             {"title": "Health", "progress": 72, "next": "Walk 30 min after lunch"},
             {"title": "Deep Work", "progress": 61, "next": "Complete one focused 90-min block"},
