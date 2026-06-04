@@ -183,4 +183,123 @@ else:
     )
     query = st.text_input("Say something to LifeOS")
     if query:
-        st.info(f"LifeOS: I understood '{query}'. I would respond with a calm, action-oriented plan.")
+        st.info(f"LifeOS: I understood '{query}'. I would respond with a calm, action-oriented plan.")# ==========================
+# IMPORTS
+# ==========================
+
+import streamlit as st
+import datetime as dt
+import google.generativeai as genai
+
+
+# ==========================
+# AI CONFIG
+# ==========================
+
+GEMINI_API_KEY = "YOUR_API_KEY_HERE"
+
+genai.configure(api_key=GEMINI_API_KEY)
+
+model = genai.GenerativeModel("gemini-2.5-flash")
+
+
+# ==========================
+# AI FUNCTIONS
+# ==========================
+
+def get_lifeos_advice(state):
+    prompt = f"""
+    You are LifeOS.
+
+    User: {state['name']}
+
+    Sleep: {state['sleep']} hours
+    Mood: {state['mood']}/10
+    Focus: {state['focus']}/100
+
+    Goals:
+    {state['goals']}
+
+    Tasks:
+    {state['tasks']}
+
+    Give:
+    1. Daily Summary
+    2. Top Priority
+    3. Health Suggestion
+    4. Productivity Suggestion
+
+    Keep it short.
+    """
+
+    response = model.generate_content(prompt)
+    return response.text
+
+
+# ==========================
+# STREAMLIT CONFIG
+# ==========================
+
+st.set_page_config(
+    page_title="LifeOS",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+
+# ==========================
+# SESSION STATE
+# ==========================
+
+if "state" not in st.session_state:
+    st.session_state.state = {
+        # your existing data here
+    }
+
+s = st.session_state.state
+
+
+# ==========================
+# AI MEMORY
+# ==========================
+
+if "ai_summary" not in st.session_state:
+    st.session_state.ai_summary = None
+
+
+# ==========================
+# UI
+# ==========================
+
+# Hero Section
+# Metrics
+# Sidebar
+# Dashboard
+
+
+# ==========================
+# DASHBOARD MODE
+# ==========================
+
+if mode == "Dashboard":
+
+    left, right = st.columns([1.2, 1])
+
+    with left:
+        # tasks
+        pass
+
+    with right:
+
+        st.markdown("### 🧠 LifeOS Brain")
+
+        if st.button("Generate AI Advice"):
+
+            with st.spinner("LifeOS is thinking..."):
+
+                st.session_state.ai_summary = get_lifeos_advice(s)
+
+        if st.session_state.ai_summary:
+
+            st.success(st.session_state.ai_summary)
