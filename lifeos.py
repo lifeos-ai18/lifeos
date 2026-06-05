@@ -222,4 +222,96 @@ else:
         with right:
             st.markdown("<div class='glass'><h3>Balance engine</h3></div>", unsafe_allow_html=True)
             st.write("• Work is high but acceptable.")
-            st.write("• Add a 20-minute walk to reduce 
+            st.write("• Add a 20-minute walk to reduce stress.")
+            st.write("• Keep evening low-stimulation.")
+
+            st.markdown("<div class='glass' style='margin-top:16px;'><h3>Recommended</h3></div>", unsafe_allow_html=True)
+            st.write("1. Finish the highest-value task first.")
+            st.write("2. Take a break every 90 minutes.")
+            st.write("3. End the day with a light review.")
+
+    elif st.session_state.page == "Plan Day":
+        st.markdown("<div class='glass'><h3>Optimized Schedule</h3></div>", unsafe_allow_html=True)
+        schedule = [
+            ("08:00", "Wake, hydrate, stretch"),
+            ("08:30", "Plan top 3 priorities"),
+            ("09:00", "Deep work block"),
+            ("10:30", "Short break"),
+            ("11:00", "Second focus block"),
+            ("13:00", "Lunch and reset"),
+            ("18:30", "Workout"),
+            ("21:30", "Wind down and sleep prep"),
+        ]
+        for t, task in schedule:
+            st.write(f"• {t} — {task}")
+
+    elif st.session_state.page == "Goals":
+        for g in s["goals"]:
+            st.markdown(f"<div class='glass'><div class='label'>{g['title']}</div><div class='small'>{g['next']}</div></div>", unsafe_allow_html=True)
+            st.progress(g["progress"] / 100)
+
+    elif st.session_state.page == "Memory":
+        st.markdown("<div class='glass'><h3>Personal Knowledge</h3></div>", unsafe_allow_html=True)
+        for m in s["memory"]:
+            st.markdown(f"<span class='chip'>{m}</span>", unsafe_allow_html=True)
+
+    elif st.session_state.page == "Voice Agent":
+        st.markdown("<div class='glass'><h3>Voice Agent</h3><p class='small'>Type a voice-style command: plan my day, what should I focus on, remind me to rest, sleep plan, wearable status, fridge meal help.</p></div>", unsafe_allow_html=True)
+        command = st.text_input("Enter voice command", placeholder="e.g. plan my day", key="voice_command")
+        run = st.button("Run command", type="primary")
+        if run and command:
+            s["last_command"] = command
+            s["agent_reply"] = agent_response(command)
+        if s["last_command"]:
+            st.info(f"You said: {s['last_command']}")
+        if s["agent_reply"]:
+            st.success(s["agent_reply"])
+
+    elif st.session_state.page == "Integrations":
+        st.markdown("<div class='glass'><h3>Integrations</h3></div>", unsafe_allow_html=True)
+        st.write("Wearable and phone data should be connected through user consent and external providers.")
+        provider = st.selectbox("Wearable source", ["None", "Apple Health", "Fitbit", "Garmin", "Oura", "Whoop", "Terra API Demo"])
+        if st.button("Connect wearable"):
+            if provider != "None":
+                s["wearable_connected"] = True
+                s["wearable_source"] = provider
+                st.success(f"Connected to {provider}.")
+            else:
+                st.warning("Choose a source first.")
+
+        st.markdown("<div class='glass' style='margin-top:16px;'><h3>User data hooks</h3></div>", unsafe_allow_html=True)
+        st.write("• Calendar sync placeholder")
+        st.write("• Sleep and activity placeholder")
+        st.write("• Meal/fridge input placeholder")
+        st.write("• Phone activity summary placeholder")
+
+    st.markdown("---")
+    st.subheader("🧠 LifeOS Brain")
+
+    if st.button("Generate AI Advice", type="primary"):
+        st.success("""
+🧠 Daily Summary:
+Focus levels are good today.
+
+🎯 Top Priority:
+Complete your Deep Work Sprint.
+
+💪 Health Suggestion:
+Take a 20-minute walk.
+
+⚡ Productivity Tip:
+Work in one 90-minute distraction-free block.
+""")
+
+    life_score = (s["mood"] * 10 + s["focus"] + s["sleep"] * 10) / 3
+
+    st.title("🧠 LifeOS")
+    st.metric("🔥 Life Score", round(life_score))
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("⚡ Focus", s["focus"])
+    with col2:
+        st.metric("😊 Mood", s["mood"])
+    with col3:
+        st.metric("😴 Sleep", s["sleep"])
