@@ -1,6 +1,8 @@
 import streamlit as st
 import datetime as dt
 import pandas as pd
+import plotly.express as px
+
 st.set_page_config(
     page_title="LifeOS",
     page_icon="🧠",
@@ -52,11 +54,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-if "profile_set" not in st.session_state:
-    st.session_state.profile_set = False
-
 if "state" not in st.session_state:
     st.session_state.state = {
+        "profile_set": False,
         "name": "",
         "email": "",
         "sleep": 6.5,
@@ -85,6 +85,8 @@ if "state" not in st.session_state:
         ],
         "last_command": "",
         "agent_reply": "",
+        "wearable_connected": False,
+        "wearable_source": "",
     }
 
 s = st.session_state.state
@@ -93,46 +95,46 @@ greeting = "morning" if now.hour < 12 else "afternoon" if now.hour < 18 else "ev
 
 def agent_response(command: str) -> str:
     cmd = command.lower().strip()
-    profile_name = s["name"] or "there"
-
+    who = s["name"] or "there"
     if not cmd:
         return ""
+    if any(x in cmd for x in ["plan my day", "plan day", "schedule"]):
+        return f"{who}, I mapped a calm day: deep work first, a reset around lunch, and a light evening wind-down."
+    if any(x in cmd for x in ["focus", "deep work", "concentrate"]):
+        return f"{who}, start one 90-minute distraction-free block now. Put the phone away and finish the hardest task first."
+    if any(x in cmd for x in ["rest", "break", "recover", "relax"]):
+        return f"{who}, take a 20-minute walk, hydrate, and keep the next block lighter."
+    if any(x in cmd for x in ["sleep", "tired", "under-slept"]):
+        return f"{who}, protect sleep tonight: reduce screen time, end work earlier, and keep the room calm."
+    if any(x in cmd for x in ["goal", "goals"]):
+        return f"{who}, your priorities are Health, Deep Work, and Balance. Deep Work looks like the best next win."
+    if any(x in cmd for x in ["fridge", "food", "meal"]):
+        return f"{who}, I can help plan meals, but fridge data needs an explicit integration. For now I can track meals you enter."
+    if any(x in cmd for x in ["wearable", "watch", "health"]):
+        return f"{who}, your wearable can be connected through a consent-based integration so I can use sleep and activity data."
+    return f"{who}, I heard '{command}'. I suggest turning it into one clear next action."
 
-    if "plan" in cmd or "schedule" in cmd:
-        return f"{profile_name}, I built a calm plan: start with deep work, take a short reset at midday, and keep the evening light."
-    if "focus" in cmd or "deep work" in cmd:
-        return f"{profile_name}, your best next move is one 90-minute distraction-free block."
-    if "rest" in cmd or "break" in cmd:
-        return f"{profile_name}, take a 20-minute walk and reduce screen time before the next block."
-    if "sleep" in cmd or "tired" in cmd:
-        return f"{profile_name}, you should wind down earlier tonight and protect your sleep."
-    if "goal" in cmd:
-        return f"{profile_name}, your top goals are Health, Deep Work, and Balance. Deep Work is the priority today."
-    if "email" in cmd:
-        return f"{profile_name}, I noted your email as part of your profile and can personalize reminders around it."
-    return f"{profile_name}, I heard: '{command}'. I recommend turning that into one clear next action."
+if "page" not in st.session_state:
+    st.session_state.page = "Profile"
 
 with st.sidebar:
     st.markdown("### LifeOS")
-    st.caption("Your personalized AI operating system")
-    mode = st.selectbox("Mode", ["Profile", "Dashboard", "Plan Day", "Goals", "Memory", "Voice Agent"])
+    st.caption("Your balanced AI operating system")
+    page = st.selectbox("Mode", ["Profile", "Dashboard", "Plan Day", "Goals", "Memory", "Voice Agent", "Integrations"])
+    st.session_state.page = page
     st.markdown("---")
     st.write("Today signals")
     st.progress(min(1, s["sleep"] / 8), text=f"Sleep {s['sleep']}h")
     st.progress(min(1, s["focus"] / 100), text=f"Focus {s['focus']}")
     st.progress(min(1, max(0, 1 - (s["screen"] / 12))), text=f"Screen {s['screen']}h")
 
-if not st.session_state.profile_set:
+if st.session_state.page == "Profile" and not s["profile_set"]:
     st.markdown(
-        """
+        f"""
         <div class="hero">
             <div class="label">Welcome</div>
-            <div style="font-size:2rem;font-weight:800;margin-top:6px;">
-                Create your profile to personalize LifeOS.
-            </div>
-            <div class="small" style="margin-top:8px;">
-                Enter your own details and the app will adapt to you.
-            </div>
+            <div style="font-size:2rem;font-weight:800;margin-top:6px;">Create your profile to personalize LifeOS.</div>
+            <div class="small" style="margin-top:8px;">Enter your details and the app will adapt to you.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -148,7 +150,6 @@ if not st.session_state.profile_set:
             mood = st.slider("Mood", 1, 10, int(s["mood"]))
             focus = st.slider("Focus", 1, 100, int(s["focus"]))
             screen = st.slider("Screen time", 0.0, 16.0, float(s["screen"]))
-
         submitted = st.form_submit_button("Save profile")
 
     if submitted:
@@ -158,8 +159,10 @@ if not st.session_state.profile_set:
         s["mood"] = mood
         s["focus"] = focus
         s["screen"] = screen
-        st.session_state.profile_set = True
-        st.success("Profile saved. You can now use the app.")
+        s["profile_set"] = True
+        st.success(f"Welcome, {s['name'] or 'user'} — your profile is saved.")
+        st.rerun()
+
 else:
     if not s["name"]:
         s["name"] = "user"
@@ -167,13 +170,9 @@ else:
     st.markdown(
         f"""
         <div class="hero">
-            <div class="label">Good {greeting}, {s['name']}</div>
-            <div style="font-size:2rem;font-weight:800;margin-top:6px;">
-                LifeOS is keeping your day calm, clear, and on track.
-            </div>
-            <div class="small" style="margin-top:8px;">
-                Personalized AI summary based on your own profile, not feed data.
-            </div>
+            <div class="label">Heyy, {s['name']}</div>
+            <div style="font-size:2rem;font-weight:800;margin-top:6px;">LifeOS is keeping your day calm, clear, and on track.</div>
+            <div class="small" style="margin-top:8px;">Personalized AI summary based on your own profile and connected data.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -187,12 +186,14 @@ else:
         (c4, "Screen Time", f"{s['screen']}h"),
     ]:
         with col:
-            st.markdown(
-                f"<div class='glass'><div class='label'>{label}</div><div class='metric'>{val}</div></div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"<div class='glass'><div class='label'>{label}</div><div class='metric'>{val}</div></div>", unsafe_allow_html=True)
 
-    if mode == "Dashboard":
+    if s["wearable_connected"]:
+        st.success(f"Wearable connected: {s['wearable_source']}")
+    else:
+        st.info("Wearable not connected yet. Open Integrations to simulate or connect later.")
+
+    if st.session_state.page == "Dashboard":
         left, right = st.columns([1.2, 1])
         with left:
             st.markdown("<div class='glass'><h3>Focus Trend</h3></div>", unsafe_allow_html=True)
@@ -221,90 +222,5 @@ else:
         with right:
             st.markdown("<div class='glass'><h3>Balance engine</h3></div>", unsafe_allow_html=True)
             st.write("• Work is high but acceptable.")
-            st.write("• Add a 20-minute walk to reduce stress.")
-            st.write("• Keep evening low-stimulation.")
-
-            st.markdown("<div class='glass' style='margin-top:16px;'><h3>Recommended</h3></div>", unsafe_allow_html=True)
-            st.write("1. Finish the highest-value task first.")
-            st.write("2. Take a break every 90 minutes.")
-            st.write("3. End the day with a light review.")
-
-    elif mode == "Plan Day":
-        st.markdown("<div class='glass'><h3>Optimized Schedule</h3></div>", unsafe_allow_html=True)
-        schedule = [
-            ("08:00", "Wake, hydrate, stretch"),
-            ("08:30", "Plan top 3 priorities"),
-            ("09:00", "Deep work block"),
-            ("10:30", "Short break"),
-            ("11:00", "Second focus block"),
-            ("13:00", "Lunch and reset"),
-            ("18:30", "Workout"),
-            ("21:30", "Wind down and sleep prep"),
-        ]
-        for t, task in schedule:
-            st.write(f"• {t} — {task}")
-
-    elif mode == "Goals":
-        for g in s["goals"]:
-            st.markdown(
-                f"<div class='glass'><div class='label'>{g['title']}</div><div class='small'>{g['next']}</div></div>",
-                unsafe_allow_html=True,
-            )
-            st.progress(g["progress"] / 100)
-
-    elif mode == "Memory":
-        st.markdown("<div class='glass'><h3>Personal Knowledge</h3></div>", unsafe_allow_html=True)
-        for m in s["memory"]:
-            st.markdown(f"<span class='chip'>{m}</span>", unsafe_allow_html=True)
-
-    elif mode == "Voice Agent":
-        st.markdown(
-            "<div class='glass'><h3>Voice Agent</h3><p class='small'>Type a command like: plan my day, what should I focus on, remind me to rest, or give me a sleep plan.</p></div>",
-            unsafe_allow_html=True,
-        )
-        command = st.text_input("Enter voice command", placeholder="e.g. plan my day", key="voice_command")
-        run = st.button("Run command", type="primary")
-
-        if run and command:
-            s["last_command"] = command
-            s["agent_reply"] = agent_response(command)
-
-        if s["last_command"]:
-            st.info(f"You said: {s['last_command']}")
-        if s["agent_reply"]:
-            st.success(s["agent_reply"])
-
-    st.markdown("---")
-    st.subheader("🧠 LifeOS Brain")
-
-    if st.button("Generate AI Advice", type="primary"):
-        st.success("""
-🧠 Daily Summary:
-Focus levels are good today.
-
-🎯 Top Priority:
-Complete your Deep Work Sprint.
-
-💪 Health Suggestion:
-Take a 20-minute walk.
-
-⚡ Productivity Tip:
-Work in one 90-minute distraction-free block.
-""")
-
-    life_score = (
-        s["mood"] * 10 +
-        s["focus"] +
-        s["sleep"] * 10
-    ) / 3
-
-    st.title("🧠 LifeOS")
-    st.metric("🔥 Life Score", round(life_score))
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("⚡ Focus", s["focus"])
-    with col2:
-        st.metric("😊 Mood", s["mood"])
-    with col3:
-        st.metric("😴 Sleep", s["sleep"])
+            st.write("• Add a 20-minute walk to reduce 
+            
