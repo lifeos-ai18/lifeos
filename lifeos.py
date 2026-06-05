@@ -34,13 +34,13 @@ if "state" not in st.session_state:
             {"time": "13:00", "title": "Lunch break"},
             {"time": "20:00", "title": "Reading + wind down"},
         ],
-        "sleep": 7.4,
-        "mood": 7,
-        "focus": 78,
-        "screen": 5.6,
-        "work_hours": 6.8,
-        "exercise": 32,
-        "social": 1.2,
+        "sleep": ,
+        "mood": 
+        "focus": ,
+        "screen": ,
+        "work_hours": ,
+        "exercise": ,
+        "social": ,
         "memory": [
             "Prefers calm, minimal plans.",
             "Best focus window: mornings.",
@@ -209,3 +209,29 @@ Take a 20-minute walk.
 ⚡ Productivity Tip:
 Work in one 90-minute distraction-free block.
 """)
+life_score = (
+    mood*10 +
+    focus +
+    sleep*10
+) / 3st.title("🧠 LifeOS")
+
+st.metric("🔥 Life Score", 84)
+
+col1,col2,col3 = st.columns(3)
+
+with col1:
+    st.metric("⚡ Focus", s["focus"])
+
+with col2:
+    st.metric("😊 Mood", s["mood"])
+
+with col3:
+    st.metric("😴 Sleep", s["sleep"])
+    import pandas as pd
+
+chart = pd.DataFrame({
+    "Day":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
+    "Focus":[50,65,70,60,78,82,76]
+})
+
+st.line_chart(chart.set_index("Day"))
