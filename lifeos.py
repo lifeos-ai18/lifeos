@@ -223,4 +223,3 @@ else:
             st.markdown("<div class='glass'><h3>Balance engine</h3></div>", unsafe_allow_html=True)
             st.write("• Work is high but acceptable.")
             st.write("• Add a 20-minute walk to reduce 
-            
