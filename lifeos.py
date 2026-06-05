@@ -213,7 +213,8 @@ life_score = (
     mood*10 +
     focus +
     sleep*10
-) / 3st.title("🧠 LifeOS")
+) 
+/ 3st.title("🧠 LifeOS")
 
 st.metric("🔥 Life Score", 84)
 
