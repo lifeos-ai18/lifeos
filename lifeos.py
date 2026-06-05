@@ -1,4 +1,4 @@
-import streamlit as st
+        import streamlit as st
 import datetime as dt
 
 st.set_page_config(
@@ -295,9 +295,20 @@ if mode == "Dashboard":
         st.markdown("### 🧠 LifeOS Brain")
 
         if st.button("Generate AI Advice"):
-import streamlit as st
-import datetime as dt
-import google.generativeai as genai
+if st.button("Generate AI Advice"):
+    st.success("""
+🧠 Daily Summary:
+Focus levels are good today.
+
+🎯 Top Priority:
+Complete your Deep Work Sprint.
+
+💪 Health Suggestion:
+Take a 20-minute walk.
+
+⚡ Productivity Tip:
+Work in one 90-minute distraction-free block.
+""")
 
 # ==========================
 # AI CONFIG
