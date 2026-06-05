@@ -295,11 +295,92 @@ if mode == "Dashboard":
         st.markdown("### 🧠 LifeOS Brain")
 
         if st.button("Generate AI Advice"):
+import streamlit as st
+import datetime as dt
+import google.generativeai as genai
 
+# ==========================
+# AI CONFIG
+# ==========================
+
+GEMINI_API_KEY = "YOUR_API_KEY_HERE"  # Replace with your actual API key
+
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-2.5-flash")
+
+# ==========================
+# AI FUNCTIONS
+# ==========================
+
+def get_lifeos_advice(state):
+    prompt = f"""
+    You are LifeOS - a calm, supportive AI operating system for personal balance.
+
+    User: {state['name']}
+
+    Sleep: {state['sleep']} hours
+    Mood: {state['mood']}/10
+    Focus: {state['focus']}/100
+    Screen Time: {state['screen']}h
+    Work Hours: {state['work_hours']}h
+    Exercise: {state['exercise']}min
+    Social: {state['social']}h
+
+    Goals:
+    {state['goals']}
+
+    Tasks:
+    {state['tasks']}
+
+    Events:
+    {state['events']}
+
+    Personal Memory:
+    {state['memory']}
+
+    Give me:
+    1. Daily Summary (2-3 sentences)
+    2. Top Priority (1 task)
+    3. Health Suggestion (1 short tip)
+    4. Productivity Suggestion (1 short tip)
+
+    Keep it short, calm, and action-oriented. Max 150 words.
+    """
+
+    response = model.generate_content(prompt)
+    return response.text
+
+
+# ==========================
+# STREAMLIT CONFIG
+# ==========================
+
+st.set_page_config(
+    page_title="LifeOS",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ==========================
+# CSS STYLING
+# ==========================
+
+css = """
+<style>
+    .stApp {
+        background: radial-gradient(circle at top, #1b2340 0%, #0b1020 45%, #060913 100%);
+        color: #f4f7fb;
+    }
+    
             with st.spinner("LifeOS is thinking..."):
 
                 st.session_state.ai_summary = get_lifeos_advice(s)
 
         if st.session_state.ai_summary:
 
-            st.success(st.session_state.ai_summary)
+            st.success(st.session_state.ai_summary)st.markdown("---")
+st.subheader("🧠 LifeOS Brain")
+
+if st.button("Generate AI Advice"):
+    st.success("AI Brain Connected Successfully")
