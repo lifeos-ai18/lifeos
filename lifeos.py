@@ -112,6 +112,8 @@ def agent_response(command: str) -> str:
         return f"{who}, I can help plan meals, but fridge data needs an explicit integration. For now I can track meals you enter."
     if any(x in cmd for x in ["wearable", "watch", "health"]):
         return f"{who}, your wearable can be connected through a consent-based integration so I can use sleep and activity data."
+    if any(x in cmd for x in ["hello", "hey", "hi"]):
+        return f"Heyy {who}, I’m ready to help."
     return f"{who}, I heard '{command}'. I suggest turning it into one clear next action."
 
 if "page" not in st.session_state:
@@ -130,7 +132,7 @@ with st.sidebar:
 
 if st.session_state.page == "Profile" and not s["profile_set"]:
     st.markdown(
-        f"""
+        """
         <div class="hero">
             <div class="label">Welcome</div>
             <div style="font-size:2rem;font-weight:800;margin-top:6px;">Create your profile to personalize LifeOS.</div>
@@ -153,14 +155,15 @@ if st.session_state.page == "Profile" and not s["profile_set"]:
         submitted = st.form_submit_button("Save profile")
 
     if submitted:
-        s["name"] = name.strip()
+        s["name"] = name.strip() or "user"
         s["email"] = email.strip()
         s["sleep"] = sleep
         s["mood"] = mood
         s["focus"] = focus
         s["screen"] = screen
         s["profile_set"] = True
-        st.success(f"Welcome, {s['name'] or 'user'} — your profile is saved.")
+        st.session_state.page = "Dashboard"
+        st.success(f"Welcome, {s['name']} — your profile is saved.")
         st.rerun()
 
 else:
@@ -186,7 +189,10 @@ else:
         (c4, "Screen Time", f"{s['screen']}h"),
     ]:
         with col:
-            st.markdown(f"<div class='glass'><div class='label'>{label}</div><div class='metric'>{val}</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='glass'><div class='label'>{label}</div><div class='metric'>{val}</div></div>",
+                unsafe_allow_html=True,
+            )
 
     if s["wearable_connected"]:
         st.success(f"Wearable connected: {s['wearable_source']}")
@@ -247,7 +253,10 @@ else:
 
     elif st.session_state.page == "Goals":
         for g in s["goals"]:
-            st.markdown(f"<div class='glass'><div class='label'>{g['title']}</div><div class='small'>{g['next']}</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='glass'><div class='label'>{g['title']}</div><div class='small'>{g['next']}</div></div>",
+                unsafe_allow_html=True,
+            )
             st.progress(g["progress"] / 100)
 
     elif st.session_state.page == "Memory":
@@ -256,7 +265,10 @@ else:
             st.markdown(f"<span class='chip'>{m}</span>", unsafe_allow_html=True)
 
     elif st.session_state.page == "Voice Agent":
-        st.markdown("<div class='glass'><h3>Voice Agent</h3><p class='small'>Type a voice-style command: plan my day, what should I focus on, remind me to rest, sleep plan, wearable status, fridge meal help.</p></div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='glass'><h3>Voice Agent</h3><p class='small'>Type a voice-style command: plan my day, what should I focus on, remind me to rest, sleep plan, wearable status, fridge meal help.</p></div>",
+            unsafe_allow_html=True,
+        )
         command = st.text_input("Enter voice command", placeholder="e.g. plan my day", key="voice_command")
         run = st.button("Run command", type="primary")
         if run and command:
