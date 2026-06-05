@@ -2,7 +2,6 @@ import streamlit as st
 import datetime as dt
 import pandas as pd
 import plotly.express as px
-
 st.set_page_config(
     page_title="LifeOS",
     page_icon="🧠",
