@@ -365,13 +365,20 @@ st.set_page_config(
 # ==========================
 # CSS STYLING
 # ==========================
-
 css = """
 <style>
     .stApp {
         background: radial-gradient(circle at top, #1b2340 0%, #0b1020 45%, #060913 100%);
         color: #f4f7fb;
     }
+</style>
+"""st.markdown(css, unsafe_allow_html=True)
+
+st.markdown("---")
+st.subheader("🧠 LifeOS Brain")
+
+if st.button("Generate AI Advice"):
+    st.success("AI Brain Connected")
     
             with st.spinner("LifeOS is thinking..."):
 
