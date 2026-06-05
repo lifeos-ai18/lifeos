@@ -1,7 +1,6 @@
 import streamlit as st
 import datetime as dt
-import streamlit as st
-import datetime as dt
+import pandas as pd
 
 st.set_page_config(
     page_title="LifeOS",
@@ -10,12 +9,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.set_page_config(
-    page_title="LifeOS",
-    page_icon="🧠",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 if "state" not in st.session_state:
     st.session_state.state = {
         "name": "user",
@@ -34,13 +27,13 @@ if "state" not in st.session_state:
             {"time": "13:00", "title": "Lunch break"},
             {"time": "20:00", "title": "Reading + wind down"},
         ],
-        "sleep": ,
-        "mood": 
-        "focus": ,
-        "screen": ,
-        "work_hours": ,
-        "exercise": ,
-        "social": ,
+        "sleep": 6.5,
+        "mood": 7,
+        "focus": 78,
+        "screen": 4.2,
+        "work_hours": 6,
+        "exercise": 30,
+        "social": 2,
         "memory": [
             "Prefers calm, minimal plans.",
             "Best focus window: mornings.",
@@ -191,7 +184,8 @@ else:
     )
     query = st.text_input("Say something to LifeOS")
     if query:
-        st.info(f"LifeOS: I understood '{query}'. I would respond with a calm, action-oriented plan.")# ==========================
+        st.info(f"LifeOS: I understood '{query}'. I would respond with a calm, action-oriented plan.")
+
 st.markdown("---")
 st.subheader("🧠 LifeOS Brain")
 
@@ -209,16 +203,18 @@ Take a 20-minute walk.
 ⚡ Productivity Tip:
 Work in one 90-minute distraction-free block.
 """)
+
 life_score = (
-    mood*10 +
-    focus +
-    sleep*10
-) 
-/ 3st.title("🧠 LifeOS")
+    s["mood"] * 10 +
+    s["focus"] +
+    s["sleep"] * 10
+) / 3
 
-st.metric("🔥 Life Score", 84)
+st.title("🧠 LifeOS")
 
-col1,col2,col3 = st.columns(3)
+st.metric("🔥 Life Score", round(life_score))
+
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.metric("⚡ Focus", s["focus"])
@@ -228,11 +224,10 @@ with col2:
 
 with col3:
     st.metric("😴 Sleep", s["sleep"])
-    import pandas as pd
 
 chart = pd.DataFrame({
-    "Day":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
-    "Focus":[50,65,70,60,78,82,76]
+    "Day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    "Focus": [50, 65, 70, 60, 78, 82, 76]
 })
 
 st.line_chart(chart.set_index("Day"))
