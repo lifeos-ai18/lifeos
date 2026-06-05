@@ -1,6 +1,5 @@
         import streamlit as st
-import datetime as dt
-
+import google.generativeai as genai
 st.set_page_config(
     page_title="LifeOS",
     page_icon="🧠",
