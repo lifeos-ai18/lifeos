@@ -3,60 +3,186 @@ import os
 import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
+import re
 
 # =========================
-# AI Assistant (LLM)
+# Local AI Assistant (Colum - Jarvis Style via Ollama)
 # =========================
 
-# Configure your API key (set via environment variable or Streamlit secrets)
-# Example: export OPENAI_API_KEY="your-key"
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 
-if not OPENAI_API_KEY:
-    st.warning("⚠️ OPENAI_API_KEY not set. AI assistant disabled. Set it via `export OPENAI_API_KEY='your-key'`")
-
-from openai import OpenAI
-
-client = None
-if OPENAI_API_KEY:
-    client = OpenAI(api_key=OPENAI_API_KEY)
+try:
+    import requests
+except ImportError:
+    st.error("❌ Please install requests: pip install requests")
+    raise
 
 
-def ask_ai_assistant(context: str, user_query: str = None) -> str:
-    """
-    Ask the AI assistant for personalized LifeOS advice.
-    If user_query is provided, answer that; otherwise, generate advice from context.
-    """
-    if not client:
-        return "AI assistant is unavailable (no API key)."
-
-    system_prompt = """
-    You are LifeOS AI, a super-intelligent personal productivity and wellness assistant.
-    Analyze the user's LifeOS data (sleep, focus, mood, screen time, tasks) and provide:
-    - Personalized, actionable advice
-    - Priority recommendations for today
-    - Wellness and productivity insights
-    - Answers to any user question about their lifeOS
-
-    Be concise, empathetic, and highly practical. Use bullet points for clarity.
-    """
-
-    user_prompt = context
-
-    if user_query:
-        user_prompt += f"\n\nUser question: {user_query}"
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",  # or "gpt-4", "claude-3", etc.
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.5,
-        max_tokens=600
+def is_hey_colum(transcript: str) -> bool:
+    t = transcript.lower().strip()
+    return (
+        t.startswith("hey colum") or
+        t.startswith("hi colum") or
+        t.startswith("hello colum") or
+        t.startswith("colum") or
+        t.startswith("hey, colum") or
+        t.startswith("hi, colum")
     )
 
-    return response.choices[0].message.content
+
+def ask_colum_jarvis(transcript: str, context: str, name: str = "Kavish", conversation_history: List[Dict] = None) -> str:
+    """
+    Ask Colum (Jarvis/Friday-style AI) for a short, sharp, intelligent response.
+    """
+    url = f"{OLLAMA_BASE_URL}/api/chat"
+
+    system_prompt = f"""
+    You are Colum, a Jarvis/Friday-style AI assistant for {name}.
+    You are smart, calm, confident, and slightly futuristic — like Tony Stark's AI.
+
+    Your style:
+    - Short, clear, professional responses (1–4 sentences, max 2–3 bullet points).
+    - No fluff, no long explanations.
+    - Speak like a real AI assistant in the room with the user.
+    - Use the user's name naturally when appropriate.
+    - When the user says "Hey Colum", greet them briefly and then answer.
+
+    When responding:
+    - Use LifeOS data (sleep, focus, mood, screen time, tasks, history) to give specific, actionable advice.
+    - If focus is low, suggest short deep work blocks.
+    - If sleep is low, prioritize recovery.
+    - If mood is low, recommend breaks and reduce load.
+    - If screen time is high, suggest a walk or offline time.
+    - For tasks, confirm additions clearly.
+    - For settings (sleep, focus, mood, screen), confirm changes briefly.
+
+    Example responses:
+    - "Good morning, Kavish. Life score is 78. Focus is low — I'd suggest 20 minutes of deep work before meetings."
+    - "Sleep set to 8 hours. I'll remind you to sleep by 11 PM."
+    - "Task added: 'Write report', high priority, today."
+    - "Your mood is 5/10. Take breaks and avoid overload today."
+
+    Always stay in character as Colum — a futuristic AI assistant.
+    """
+
+    user_prompt = (
+        f"LifeOS Context:\n{context}\n\n"
+        f"{name} says: {transcript}"
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt}
+    ]
+
+    if conversation_history:
+        for turn in conversation_history[-4:]:
+            messages.append({
+                "role": turn["role"],
+                "content": turn["text"]
+            })
+
+    messages.append({"role": "user", "content": user_prompt})
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": messages,
+        "temperature": 0.5,
+        "max_tokens": 400,
+        "stream": False
+    }
+
+    try:
+        resp = requests.post(url, json=payload, timeout=30)
+        if resp.status_code != 200:
+            return f"Colum error (status {resp.status_code}): {resp.text}"
+        data = resp.json()
+        return data["message"]["content"].strip()
+    except Exception as e:
+        return f"Colum could not connect to Ollama: {e}\nMake sure Ollama is running and you pulled the model (e.g., `ollama pull llama3`)."
+
+
+# =========================
+# Voice Command Parser
+# =========================
+
+def parse_voice_command(transcript: str) -> Dict[str, Any]:
+    transcript_lower = transcript.lower().strip()
+
+    clean_transcript = transcript_lower
+    if is_hey_colum(transcript_lower):
+        clean_transcript = re.sub(
+            r"^(hey\s*colum|hi\s*colum|hello\s*colum|colum)[,\s:]*",
+            "",
+            transcript_lower
+        ).strip()
+
+    sleep_match = re.search(r"set my sleep to\s+(\d+\.?\d*)\s*hours?", clean_transcript)
+    if sleep_match:
+        value = float(sleep_match.group(1))
+        return {
+            "type": "set_sleep",
+            "text": transcript,
+            "action_data": {"sleep": value}
+        }
+
+    focus_match = re.search(r"set my focus to\s+(\d+)\s*percent?", clean_transcript)
+    if focus_match:
+        value = int(focus_match.group(1))
+        return {
+            "type": "set_focus",
+            "text": transcript,
+            "action_data": {"focus": value}
+        }
+
+    mood_match = re.search(r"set my mood to\s+(\d+)\s*/\s*10?", clean_transcript)
+    if mood_match:
+        value = int(mood_match.group(1))
+        return {
+            "type": "set_mood",
+            "text": transcript,
+            "action_data": {"mood": value}
+        }
+
+    screen_match = re.search(r"set my screen time to\s+(\d+\.?\d*)\s*hours?", clean_transcript)
+    if screen_match:
+        value = float(screen_match.group(1))
+        return {
+            "type": "set_screen",
+            "text": transcript,
+            "action_data": {"screen": value}
+        }
+
+    add_task_match = re.search(r"add task[:\s]+(.+)", clean_transcript)
+    if add_task_match:
+        task_name = add_task_match.group(1).strip()
+        priority = "medium"
+        if "high priority" in clean_transcript or "priority high" in clean_transcript:
+            priority = "high"
+        elif "low priority" in clean_transcript or "priority low" in clean_transcript:
+            priority = "low"
+
+        time_val = "Today"
+        if "tomorrow" in clean_transcript:
+            time_val = "Tomorrow"
+        elif "this week" in clean_transcript:
+            time_val = "This Week"
+
+        return {
+            "type": "add_task",
+            "text": transcript,
+            "action_data": {
+                "task": task_name,
+                "priority": priority,
+                "time": time_val
+            }
+        }
+
+    return {
+        "type": "question",
+        "text": transcript,
+        "action_data": {}
+    }
 
 
 # =========================
@@ -75,7 +201,6 @@ def init_session_state():
     if "screen" not in st.session_state:
         st.session_state.screen = 4
     if "history" not in st.session_state:
-        # Store daily snapshots: {date: {sleep, focus, mood, screen, life_score}}
         st.session_state.history = []
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -112,7 +237,6 @@ def save_daily_snapshot():
 
 
 def build_ai_context() -> str:
-    """Build a structured context for the AI assistant."""
     today = datetime.now().strftime("%Y-%m-%d")
 
     tasks_text = "\n".join([
@@ -151,13 +275,13 @@ def build_ai_context() -> str:
 # =========================
 
 st.set_page_config(
-    page_title="LifeOS AI - Super Personal Assistant",
-    page_icon="🧠",
+    page_title="LifeOS - Colum Jarvis AI",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for modern dark UI
+# Futuristic Jarvis-style UI
 st.markdown(
     """
     <style>
@@ -165,7 +289,7 @@ st.markdown(
 
     body {
         font-family: 'Inter', sans-serif;
-        background-color: #0e1117;
+        background-color: #0b0f19;
         color: #e6e6e6;
     }
 
@@ -174,36 +298,40 @@ st.markdown(
         font-weight: 700;
         color: #ffffff;
         margin-bottom: 0.5rem;
+        text-shadow: 0 0 20px #2563eb;
     }
 
     .section-title {
-        font-size: 1.4rem;
+        font-size: 1.3rem;
         font-weight: 600;
         color: #ffffff;
-        margin-top: 1.5rem;
-        margin-bottom: 0.5rem;
+        margin-top: 1.2rem;
+        margin-bottom: 0.4rem;
     }
 
     .card {
-        background: #161b22;
+        background: #111624;
         border-radius: 12px;
         padding: 1.2rem;
         margin-bottom: 1rem;
-        border: 1px solid #232a35;
+        border: 1px solid #1f293b;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
 
     .metric-card {
-        background: #1f2430;
+        background: #151a2a;
         border-radius: 10px;
         padding: 1rem;
         text-align: center;
-        border: 1px solid #232a35;
+        border: 1px solid #1f293b;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
 
     .metric-value {
-        font-size: 2rem;
+        font-size: 2.2rem;
         font-weight: 700;
         color: #4ade80;
+        text-shadow: 0 0 12px #4ade80;
     }
 
     .metric-label {
@@ -212,11 +340,11 @@ st.markdown(
     }
 
     .task-item {
-        background: #161b22;
+        background: #111624;
         border-radius: 8px;
         padding: 0.6rem 0.8rem;
         margin: 0.4rem 0;
-        border: 1px solid #232a35;
+        border: 1px solid #1f293b;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -232,20 +360,21 @@ st.markdown(
     }
 
     .ai-message {
-        background: #1f2430;
+        background: #151a2a;
         border-radius: 10px;
         padding: 1rem;
         margin: 0.6rem 0;
-        border: 1px solid #232a35;
+        border: 1px solid #1f293b;
         line-height: 1.5;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
 
     .user-message {
-        background: #161b22;
+        background: #111624;
         border-radius: 10px;
         padding: 1rem;
         margin: 0.6rem 0;
-        border: 1px solid #232a35;
+        border: 1px solid #1f293b;
         line-height: 1.5;
     }
 
@@ -256,6 +385,7 @@ st.markdown(
         border: none;
         padding: 0.6rem 1.2rem;
         font-weight: 600;
+        box-shadow: 0 4px 12px rgba(37,99,235,0.3);
     }
 
     .stButton>button:hover {
@@ -263,8 +393,8 @@ st.markdown(
     }
 
     .stTextInput>input, .stNumberInput>input {
-        background: #161b22;
-        border: 1px solid #232a35;
+        background: #111624;
+        border: 1px solid #1f293b;
         color: #e6e6e6;
         border-radius: 8px;
     }
@@ -273,7 +403,63 @@ st.markdown(
         color: #4ade80;
         font-weight: 600;
     }
+
+    .listening {
+        color: #f472b6;
+        font-weight: 600;
+    }
     </style>
+
+    <script>
+    let isListening = false;
+
+    function startSpeaking(text) {
+        if (!window.speechSynthesis) {
+            return;
+        }
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "en-US";
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        speechSynthesis.speak(utterance);
+    }
+
+    function startListening(callback) {
+        if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+            callback("Speech recognition not supported in this browser.");
+            return;
+        }
+
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = "en-US";
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = () => {
+            isListening = true;
+            document.getElementById("voice-status").innerText = "🎤 Listening... say 'Hey Colum' + your question.";
+        };
+
+        recognition.onend = () => {
+            isListening = false;
+            document.getElementById("voice-status").innerText = "🔴 Not listening.";
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            callback(transcript);
+        };
+
+        recognition.onerror = (event) => {
+            callback("Error: " + event.error);
+        };
+
+        recognition.start();
+    }
+
+    window.startListening = startListening;
+    window.startSpeaking = startSpeaking;
+    </script>
     """,
     unsafe_allow_html=True
 )
@@ -283,8 +469,8 @@ st.markdown(
 # Main UI
 # =========================
 
-st.markdown('<div class="app-header">🧠 LifeOS AI - Super Personal Assistant</div>', unsafe_allow_html=True)
-st.markdown("Your intelligent productivity & wellness dashboard")
+st.markdown('<div class="app-header">🤖 LifeOS - Colum Jarvis AI</div>', unsafe_allow_html=True)
+st.markdown("Say 'Hey Colum' to activate your Jarvis-style AI assistant. It responds like Friday/Jarvis from Marvel.")
 
 # Sidebar
 with st.sidebar:
@@ -322,6 +508,22 @@ with st.sidebar:
         max_value=24,
         value=s["screen"],
         step=0.5
+    )
+
+    st.markdown('<div class="section-title">AI Settings</div>', unsafe_allow_html=True)
+
+    st.text_input(
+        "Ollama URL",
+        value=OLLAMA_BASE_URL,
+        disabled=True,
+        help="Current Ollama base URL (env: OLLAMA_BASE_URL)"
+    )
+
+    st.text_input(
+        "AI Model",
+        value=OLLAMA_MODEL,
+        disabled=True,
+        help="Current model (env: OLLAMA_MODEL, default: llama3)"
     )
 
     st.markdown('<div class="section-title">Actions</div>', unsafe_allow_html=True)
@@ -370,7 +572,6 @@ with st.sidebar:
 # Main content
 st.markdown('<br>', unsafe_allow_html=True)
 
-# Row 1: Life Score + Inputs Summary
 col1, col2, col3 = st.columns([1, 1, 2])
 
 with col1:
@@ -386,7 +587,7 @@ with col1:
     )
 
 with col2:
-    st.markdown('<div class="section-title">Today’s Summary</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Today's Summary</div>', unsafe_allow_html=True)
     st.markdown(
         f"""
         <div class="card">
@@ -400,46 +601,117 @@ with col2:
     )
 
 with col3:
-    st.markdown('<div class="section-title">🧠 LifeOS AI Assistant</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🤖 Colum Jarvis AI</div>', unsafe_allow_html=True)
+
+    st.markdown(
+        '<div id="voice-status" style="margin-bottom:0.6rem;color:#9aa0a6;">🔴 Not listening.</div>',
+        unsafe_allow_html=True
+    )
 
     # Chat history
     for msg in s["chat_history"]:
         if msg["role"] == "user":
             st.markdown(f'<div class="user-message">👤 {msg["text"]}</div>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<div class="ai-message">🤖 {msg["text"]}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="ai-message">🤖 Colum: {msg["text"]}</div>', unsafe_allow_html=True)
+            # Optional: make Colum speak (text-to-speech)
+            # st.markdown(
+            #     f'<button onclick="startSpeaking(`{msg["text"]}`)">🔊 Speak</button>',
+            #     unsafe_allow_html=True
+            # )
 
     user_query = st.text_input(
-        "Ask LifeOS AI:",
-        placeholder="e.g. What should I prioritize today? How can I improve my focus?",
+        "Talk to Colum (say 'Hey Colum' + your question):",
+        placeholder="e.g. 'Hey Colum, what should I prioritize today?'",
         label_visibility="collapsed"
     )
 
+    col_voice1, col_voice2 = st.columns([3, 1])
+
+    with col_voice2:
+        if st.button("🎤 Start Voice"):
+            st.session_state["voice_requested"] = True
+
+    if st.session_state.get("voice_requested", False):
+        st.session_state["voice_requested"] = False
+        st.markdown(
+            """
+            <script>
+            window.startListening(function(transcript) {
+                document.querySelector('input[type="text"]').value = transcript;
+            });
+            </script>
+            """,
+            unsafe_allow_html=True
+        )
+
     if st.button("🚀 Send"):
         if not user_query.strip():
-            st.warning("Please enter a question.")
+            st.warning("Please enter a message or use voice.")
         else:
-            context = build_ai_context()
-            ai_response = ask_ai_assistant(context, user_query)
+            command = parse_voice_command(user_query)
 
-            s["chat_history"].append({"role": "user", "text": user_query})
-            s["chat_history"].append({"role": "assistant", "text": ai_response})
+            if command["type"] == "add_task":
+                data = command["action_data"]
+                s["tasks"].append({
+                    "task": data["task"],
+                    "time": data["time"],
+                    "status": "upcoming",
+                    "priority": data["priority"]
+                })
+                ai_text = f"✅ Task added: '{data['task']}', {data['priority']} priority, {data['time']}."
+                s["chat_history"].append({"role": "user", "text": user_query})
+                s["chat_history"].append({"role": "assistant", "text": ai_text})
+                st.success("Task added!")
+                st.rerun()
 
-            st.rerun()
+            elif command["type"] == "set_sleep":
+                s["sleep"] = command["action_data"]["sleep"]
+                ai_text = f"✅ Sleep set to {command['action_data']['sleep']} hours."
+                s["chat_history"].append({"role": "user", "text": user_query})
+                s["chat_history"].append({"role": "assistant", "text": ai_text})
+                st.success(f"Sleep set to {s['sleep']}h")
+                st.rerun()
+
+            elif command["type"] == "set_focus":
+                s["focus"] = command["action_data"]["focus"]
+                ai_text = f"✅ Focus set to {command['action_data']['focus']}%."
+                s["chat_history"].append({"role": "user", "text": user_query})
+                s["chat_history"].append({"role": "assistant", "text": ai_text})
+                st.success(f"Focus set to {s['focus']}%")
+                st.rerun()
+
+            elif command["type"] == "set_mood":
+                s["mood"] = command["action_data"]["mood"]
+                ai_text = f"✅ Mood set to {command['action_data']['mood']}/10."
+                s["chat_history"].append({"role": "user", "text": user_query})
+                s["chat_history"].append({"role": "assistant", "text": ai_text})
+                st.success(f"Mood set to {s['mood']}/10")
+                st.rerun()
+
+            elif command["type"] == "set_screen":
+                s["screen"] = command["action_data"]["screen"]
+                ai_text = f"✅ Screen time set to {command['action_data']['screen']} hours."
+                s["chat_history"].append({"role": "user", "text": user_query})
+                s["chat_history"].append({"role": "assistant", "text": ai_text})
+                st.success(f"Screen time set to {s['screen']}h")
+                st.rerun()
+
+            else:
+                context = build_ai_context()
+                ai_response = ask_colum_jarvis(user_query, context, "Kavish", s["chat_history"])
+
+                s["chat_history"].append({"role": "user", "text": user_query})
+                s["chat_history"].append({"role": "assistant", "text": ai_response})
+
+                st.rerun()
 
     if st.button("🧹 Clear Chat"):
         s["chat_history"] = []
         st.rerun()
 
-    if not OPENAI_API_KEY:
-        st.info(
-            "ℹ️ AI assistant is disabled because OPENAI_API_KEY is not set. "
-            "Set it to get super AI advice."
-        )
-
 st.markdown("---")
 
-# Row 2: Tasks
 st.markdown('<div class="section-title">➕ Add & Manage Tasks</div>', unsafe_allow_html=True)
 
 col_add1, col_add2, col_add3 = st.columns([2, 1, 1])
@@ -480,8 +752,6 @@ if s["tasks"]:
     st.markdown('<div class="section-title">📋 Your Tasks</div>', unsafe_allow_html=True)
 
     for i, t in reversed(list(zip(range(len(s["tasks"])), s["tasks"]))):
-        idx = t["task"]  # using task text as key (simple approach)
-
         status_class = "completed" if t["status"] == "completed" else "upcoming"
 
         st.markdown(
@@ -502,7 +772,6 @@ if s["tasks"]:
             unsafe_allow_html=True
         )
 
-        # Handle complete/delete
         if st.session_state.get(f"complete_{i}", False) and t["status"] != "completed":
             t["status"] = "completed"
             st.rerun()
@@ -515,7 +784,6 @@ else:
 
 st.markdown("---")
 
-# Row 3: History (last 7 days)
 st.markdown('<div class="section-title">📈 Last 7 Days History</div>', unsafe_allow_html=True)
 
 if s["history"]:
@@ -536,6 +804,6 @@ if s["history"]:
 
         st.dataframe(data, use_container_width=True)
     else:
-        st.info("No data for the last 7 days yet. Save daily snapshots to build history.")
+        st.info("No data for the last 7 days yet. Save daily snapshots.")
 else:
     st.info("No history yet. Save daily snapshots to build trends.")
