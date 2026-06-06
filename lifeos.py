@@ -1,329 +1,541 @@
 import streamlit as st
-import datetime as dt
-import pandas as pd
-import plotly.express as px
+import os
+import json
+from datetime import datetime, timedelta
+from typing import List, Dict, Any
+
+# =========================
+# AI Assistant (LLM)
+# =========================
+
+# Configure your API key (set via environment variable or Streamlit secrets)
+# Example: export OPENAI_API_KEY="your-key"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    st.warning("⚠️ OPENAI_API_KEY not set. AI assistant disabled. Set it via `export OPENAI_API_KEY='your-key'`")
+
+from openai import OpenAI
+
+client = None
+if OPENAI_API_KEY:
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+
+def ask_ai_assistant(context: str, user_query: str = None) -> str:
+    """
+    Ask the AI assistant for personalized LifeOS advice.
+    If user_query is provided, answer that; otherwise, generate advice from context.
+    """
+    if not client:
+        return "AI assistant is unavailable (no API key)."
+
+    system_prompt = """
+    You are LifeOS AI, a super-intelligent personal productivity and wellness assistant.
+    Analyze the user's LifeOS data (sleep, focus, mood, screen time, tasks) and provide:
+    - Personalized, actionable advice
+    - Priority recommendations for today
+    - Wellness and productivity insights
+    - Answers to any user question about their lifeOS
+
+    Be concise, empathetic, and highly practical. Use bullet points for clarity.
+    """
+
+    user_prompt = context
+
+    if user_query:
+        user_prompt += f"\n\nUser question: {user_query}"
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",  # or "gpt-4", "claude-3", etc.
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=0.5,
+        max_tokens=600
+    )
+
+    return response.choices[0].message.content
+
+
+# =========================
+# Session State Initialization
+# =========================
+
+def init_session_state():
+    if "tasks" not in st.session_state:
+        st.session_state.tasks = []
+    if "sleep" not in st.session_state:
+        st.session_state.sleep = 7
+    if "focus" not in st.session_state:
+        st.session_state.focus = 60
+    if "mood" not in st.session_state:
+        st.session_state.mood = 7
+    if "screen" not in st.session_state:
+        st.session_state.screen = 4
+    if "history" not in st.session_state:
+        # Store daily snapshots: {date: {sleep, focus, mood, screen, life_score}}
+        st.session_state.history = []
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+
+init_session_state()
+s = st.session_state
+
+
+# =========================
+# Helper Functions
+# =========================
+
+def compute_life_score() -> int:
+    return int(
+        (s["sleep"] * 10 +
+         s["focus"] +
+         s["mood"] * 10) / 3
+    )
+
+
+def save_daily_snapshot():
+    snapshot = {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "sleep": s["sleep"],
+        "focus": s["focus"],
+        "mood": s["mood"],
+        "screen": s["screen"],
+        "life_score": compute_life_score(),
+        "tasks_count": len(s["tasks"]),
+        "tasks_completed": sum(1 for t in s["tasks"] if t["status"] == "completed")
+    }
+    s["history"].append(snapshot)
+
+
+def build_ai_context() -> str:
+    """Build a structured context for the AI assistant."""
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    tasks_text = "\n".join([
+        f"- [{t['status']}] {t['task']} ({t['time']}, priority: {t.get('priority', 'medium')})"
+        for t in s["tasks"]
+    ])
+
+    if not tasks_text:
+        tasks_text = "- No tasks yet."
+
+    history_last_7 = [h for h in s["history"] if h["date"] >= (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")]
+    history_text = "\n".join([
+        f"{h['date']}: sleep={h['sleep']}h, focus={h['focus']}%, mood={h['mood']}/10, screen={h['screen']}h, score={h['life_score']}"
+        for h in history_last_7
+    ])
+
+    if not history_text:
+        history_text = "- No historical data yet."
+
+    context = (
+        f"LifeOS Data for {today}:\n"
+        f"- Sleep: {s['sleep']} hours\n"
+        f"- Focus: {s['focus']}%\n"
+        f"- Mood: {s['mood']}/10\n"
+        f"- Screen time: {s['screen']} hours\n"
+        f"- Life Score: {compute_life_score()}/100\n\n"
+        f"Tasks:\n{tasks_text}\n\n"
+        f"Last 7 days history:\n{history_text}"
+    )
+
+    return context
+
+
+# =========================
+# UI Configuration
+# =========================
 
 st.set_page_config(
-    page_title="LifeOS",
+    page_title="LifeOS AI - Super Personal Assistant",
     page_icon="🧠",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
-st.markdown("""
-<style>
-.stApp {
-    background: radial-gradient(circle at top, #1b2340 0%, #0b1020 45%, #060913 100%);
-    color: #f4f7fb;
-}
-[data-testid='stSidebar'] {
-    background: rgba(8,12,24,0.72);
-    backdrop-filter: blur(18px);
-    border-right: 1px solid rgba(255,255,255,0.08);
-}
-.glass {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.10);
-    backdrop-filter: blur(16px);
-    border-radius: 22px;
-    padding: 18px;
-    box-shadow: 0 20px 60px rgba(0,0,0,.28);
-}
-.hero {
-    padding: 24px 28px;
-    border-radius: 28px;
-    background: linear-gradient(135deg, rgba(118,96,255,.22), rgba(0,212,255,.10));
-    border: 1px solid rgba(255,255,255,0.10);
-}
-.small { opacity:.78; font-size: .92rem; }
-.metric { font-size: 2rem; font-weight: 700; line-height: 1.1; }
-.label {
-    font-size: .82rem;
-    opacity: .75;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-}
-.chip {
-    display:inline-block;
-    padding: 6px 10px;
-    margin: 4px 6px 0 0;
-    border-radius: 999px;
-    background: rgba(255,255,255,.08);
-    border: 1px solid rgba(255,255,255,.10);
-}
-</style>
-""", unsafe_allow_html=True)
+# Custom CSS for modern dark UI
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700');
 
-if "state" not in st.session_state:
-    st.session_state.state = {
-        "profile_set": False,
-        "name": "",
-        "email": "",
-        "sleep": 6.5,
-        "mood": 7,
-        "focus": 78,
-        "screen": 4.2,
-        "goals": [
-            {"title": "Health", "progress": 72, "next": "Walk 30 min after lunch"},
-            {"title": "Deep Work", "progress": 61, "next": "Complete one focused 90-min block"},
-            {"title": "Balance", "progress": 54, "next": "Call a friend tonight"},
-        ],
-        "tasks": [
-            {"task": "Review top priorities", "time": "08:30", "status": "done"},
-            {"task": "Deep work sprint", "time": "10:00", "status": "upcoming"},
-            {"task": "Workout", "time": "18:30", "status": "upcoming"},
-        ],
-        "events": [
-            {"time": "09:30", "title": "Team sync"},
-            {"time": "13:00", "title": "Lunch break"},
-            {"time": "20:00", "title": "Reading + wind down"},
-        ],
-        "memory": [
-            "Prefers calm, minimal plans.",
-            "Best focus window: mornings.",
-            "Likes supportive reminders.",
-        ],
-        "last_command": "",
-        "agent_reply": "",
-        "wearable_connected": False,
-        "wearable_source": "",
+    body {
+        font-family: 'Inter', sans-serif;
+        background-color: #0e1117;
+        color: #e6e6e6;
     }
 
-s = st.session_state.state
-now = dt.datetime.now()
-greeting = "morning" if now.hour < 12 else "afternoon" if now.hour < 18 else "evening"
+    .app-header {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 0.5rem;
+    }
 
-def agent_response(command: str) -> str:
-    cmd = command.lower().strip()
-    who = s["name"] or "there"
-    if not cmd:
-        return ""
-    if any(x in cmd for x in ["plan my day", "plan day", "schedule"]):
-        return f"{who}, I mapped a calm day: deep work first, a reset around lunch, and a light evening wind-down."
-    if any(x in cmd for x in ["focus", "deep work", "concentrate"]):
-        return f"{who}, start one 90-minute distraction-free block now. Put the phone away and finish the hardest task first."
-    if any(x in cmd for x in ["rest", "break", "recover", "relax"]):
-        return f"{who}, take a 20-minute walk, hydrate, and keep the next block lighter."
-    if any(x in cmd for x in ["sleep", "tired", "under-slept"]):
-        return f"{who}, protect sleep tonight: reduce screen time, end work earlier, and keep the room calm."
-    if any(x in cmd for x in ["goal", "goals"]):
-        return f"{who}, your priorities are Health, Deep Work, and Balance. Deep Work looks like the best next win."
-    if any(x in cmd for x in ["fridge", "food", "meal"]):
-        return f"{who}, I can help plan meals, but fridge data needs an explicit integration. For now I can track meals you enter."
-    if any(x in cmd for x in ["wearable", "watch", "health"]):
-        return f"{who}, your wearable can be connected through a consent-based integration so I can use sleep and activity data."
-    if any(x in cmd for x in ["hello", "hey", "hi"]):
-        return f"Heyy {who}, I’m ready to help."
-    return f"{who}, I heard '{command}'. I suggest turning it into one clear next action."
+    .section-title {
+        font-size: 1.4rem;
+        font-weight: 600;
+        color: #ffffff;
+        margin-top: 1.5rem;
+        margin-bottom: 0.5rem;
+    }
 
-if "page" not in st.session_state:
-    st.session_state.page = "Profile"
+    .card {
+        background: #161b22;
+        border-radius: 12px;
+        padding: 1.2rem;
+        margin-bottom: 1rem;
+        border: 1px solid #232a35;
+    }
 
+    .metric-card {
+        background: #1f2430;
+        border-radius: 10px;
+        padding: 1rem;
+        text-align: center;
+        border: 1px solid #232a35;
+    }
+
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #4ade80;
+    }
+
+    .metric-label {
+        font-size: 0.9rem;
+        color: #9aa0a6;
+    }
+
+    .task-item {
+        background: #161b22;
+        border-radius: 8px;
+        padding: 0.6rem 0.8rem;
+        margin: 0.4rem 0;
+        border: 1px solid #232a35;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .task-item.completed {
+        border-left: 4px solid #4ade80;
+        opacity: 0.8;
+    }
+
+    .task-item.upcoming {
+        border-left: 4px solid #60a5fa;
+    }
+
+    .ai-message {
+        background: #1f2430;
+        border-radius: 10px;
+        padding: 1rem;
+        margin: 0.6rem 0;
+        border: 1px solid #232a35;
+        line-height: 1.5;
+    }
+
+    .user-message {
+        background: #161b22;
+        border-radius: 10px;
+        padding: 1rem;
+        margin: 0.6rem 0;
+        border: 1px solid #232a35;
+        line-height: 1.5;
+    }
+
+    .stButton>button {
+        background: #2563eb;
+        color: white;
+        border-radius: 8px;
+        border: none;
+        padding: 0.6rem 1.2rem;
+        font-weight: 600;
+    }
+
+    .stButton>button:hover {
+        background: #1d4ed8;
+    }
+
+    .stTextInput>input, .stNumberInput>input {
+        background: #161b22;
+        border: 1px solid #232a35;
+        color: #e6e6e6;
+        border-radius: 8px;
+    }
+
+    .highlight {
+        color: #4ade80;
+        font-weight: 600;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# =========================
+# Main UI
+# =========================
+
+st.markdown('<div class="app-header">🧠 LifeOS AI - Super Personal Assistant</div>', unsafe_allow_html=True)
+st.markdown("Your intelligent productivity & wellness dashboard")
+
+# Sidebar
 with st.sidebar:
-    st.markdown("### LifeOS")
-    st.caption("Your balanced AI operating system")
-    page = st.selectbox("Mode", ["Profile", "Dashboard", "Plan Day", "Goals", "Memory", "Voice Agent", "Integrations"])
-    st.session_state.page = page
-    st.markdown("---")
-    st.write("Today signals")
-    st.progress(min(1, s["sleep"] / 8), text=f"Sleep {s['sleep']}h")
-    st.progress(min(1, s["focus"] / 100), text=f"Focus {s['focus']}")
-    st.progress(min(1, max(0, 1 - (s["screen"] / 12))), text=f"Screen {s['screen']}h")
+    st.title("⚙️ Settings")
 
-if st.session_state.page == "Profile" and not s["profile_set"]:
-    st.markdown(
-        """
-        <div class="hero">
-            <div class="label">Welcome</div>
-            <div style="font-size:2rem;font-weight:800;margin-top:6px;">Create your profile to personalize LifeOS.</div>
-            <div class="small" style="margin-top:8px;">Enter your details and the app will adapt to you.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.markdown('<div class="section-title">Daily Inputs</div>', unsafe_allow_html=True)
+
+    s["sleep"] = st.number_input(
+        "😴 Sleep (hours)",
+        min_value=0,
+        max_value=24,
+        value=s["sleep"],
+        step=0.5
     )
 
-    with st.form("profile_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            name = st.text_input("Name", placeholder="Your name")
-            email = st.text_input("Email", placeholder="you@example.com")
-        with col2:
-            sleep = st.slider("Sleep hours", 0.0, 12.0, float(s["sleep"]))
-            mood = st.slider("Mood", 1, 10, int(s["mood"]))
-            focus = st.slider("Focus", 1, 100, int(s["focus"]))
-            screen = st.slider("Screen time", 0.0, 16.0, float(s["screen"]))
-        submitted = st.form_submit_button("Save profile")
+    s["focus"] = st.number_input(
+        "🎯 Focus (%)",
+        min_value=0,
+        max_value=100,
+        value=s["focus"],
+        step=1
+    )
 
-    if submitted:
-        s["name"] = name.strip() or "user"
-        s["email"] = email.strip()
-        s["sleep"] = sleep
-        s["mood"] = mood
-        s["focus"] = focus
-        s["screen"] = screen
-        s["profile_set"] = True
-        st.session_state.page = "Dashboard"
-        st.success(f"Welcome, {s['name']} — your profile is saved.")
-        st.rerun()
+    s["mood"] = st.number_input(
+        "❤️ Mood (1–10)",
+        min_value=1,
+        max_value=10,
+        value=s["mood"],
+        step=1
+    )
 
-else:
-    if not s["name"]:
-        s["name"] = "user"
+    s["screen"] = st.number_input(
+        "📱 Screen time (hours)",
+        min_value=0,
+        max_value=24,
+        value=s["screen"],
+        step=0.5
+    )
 
+    st.markdown('<div class="section-title">Actions</div>', unsafe_allow_html=True)
+
+    if st.button("💾 Save Daily Snapshot"):
+        save_daily_snapshot()
+        st.success("Daily snapshot saved!")
+
+    if st.button("📤 Export to JSON"):
+        data = {
+            "today": {
+                "sleep": s["sleep"],
+                "focus": s["focus"],
+                "mood": s["mood"],
+                "screen": s["screen"],
+                "life_score": compute_life_score(),
+                "tasks": s["tasks"]
+            },
+            "history": s["history"]
+        }
+        json_str = json.dumps(data, indent=2)
+        st.download_button(
+            label="Download JSON",
+            data=json_str,
+            file_name=f"lifeos_{datetime.now().strftime('%Y%m%d')}.json",
+            mime="application/json"
+        )
+
+    st.markdown("---")
     st.markdown(
         f"""
-        <div class="hero">
-            <div class="label">Heyy, {s['name']}</div>
-            <div style="font-size:2rem;font-weight:800;margin-top:6px;">LifeOS is keeping your day calm, clear, and on track.</div>
-            <div class="small" style="margin-top:8px;">Personalized AI summary based on your own profile and connected data.</div>
+        <div class="card">
+            <div class="metric-label">Total Tasks</div>
+            <div style="font-size:1.5rem;font-weight:700;">{len(s['tasks')}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        <div class="card">
+            <div class="metric-label">Completed</div>
+            <div style="font-size:1.5rem;font-weight:700;color:#4ade80;">
+                {sum(1 for t in s['tasks'] if t['status'] == 'completed')}
+            </div>
+        </div>
+        """
+        , unsafe_allow_html=True
     )
 
-    c1, c2, c3, c4 = st.columns(4)
-    for col, label, val in [
-        (c1, "Sleep", f"{s['sleep']}h"),
-        (c2, "Mood", f"{s['mood']}/10"),
-        (c3, "Focus", f"{s['focus']}/100"),
-        (c4, "Screen Time", f"{s['screen']}h"),
-    ]:
-        with col:
-            st.markdown(
-                f"<div class='glass'><div class='label'>{label}</div><div class='metric'>{val}</div></div>",
-                unsafe_allow_html=True,
-            )
+# Main content
+st.markdown('<br>', unsafe_allow_html=True)
 
-    if s["wearable_connected"]:
-        st.success(f"Wearable connected: {s['wearable_source']}")
-    else:
-        st.info("Wearable not connected yet. Open Integrations to simulate or connect later.")
+# Row 1: Life Score + Inputs Summary
+col1, col2, col3 = st.columns([1, 1, 2])
 
-    if st.session_state.page == "Dashboard":
-        left, right = st.columns([1.2, 1])
-        with left:
-            st.markdown("<div class='glass'><h3>Focus Trend</h3></div>", unsafe_allow_html=True)
-            df = pd.DataFrame({
-                "Day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-                "Focus": [50, 65, 70, 60, 78, 82, 76]
-            })
-            fig = px.line(df, x="Day", y="Focus", markers=True)
-            fig.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font_color="#f4f7fb",
-                height=320,
-                margin=dict(l=10, r=10, t=20, b=10)
-            )
-            st.plotly_chart(fig, use_container_width=True)
+with col1:
+    life_score = compute_life_score()
+    st.markdown(
+        f"""
+        <div class="card metric-card">
+            <div class="metric-value">{life_score}</div>
+            <div class="metric-label">Life Score /100</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-            st.markdown("<div class='glass' style='margin-top:16px;'><h3>Today</h3></div>", unsafe_allow_html=True)
-            for item in s["tasks"]:
-                st.write(f"• {item['time']} — {item['task']} ({item['status']})")
+with col2:
+    st.markdown('<div class="section-title">Today’s Summary</div>', unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="card">
+            😴 Sleep: <span class="highlight">{s['sleep']}h</span><br>
+            🎯 Focus: <span class="highlight">{s['focus']}%</span><br>
+            ❤️ Mood: <span class="highlight">{s['mood']}/10</span><br>
+            📱 Screen: <span class="highlight">{s['screen']}h</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-            st.markdown("<div class='glass' style='margin-top:16px;'><h3>Upcoming events</h3></div>", unsafe_allow_html=True)
-            for e in s["events"]:
-                st.write(f"• {e['time']} — {e['title']}")
+with col3:
+    st.markdown('<div class="section-title">🧠 LifeOS AI Assistant</div>', unsafe_allow_html=True)
 
-        with right:
-            st.markdown("<div class='glass'><h3>Balance engine</h3></div>", unsafe_allow_html=True)
-            st.write("• Work is high but acceptable.")
-            st.write("• Add a 20-minute walk to reduce stress.")
-            st.write("• Keep evening low-stimulation.")
+    # Chat history
+    for msg in s["chat_history"]:
+        if msg["role"] == "user":
+            st.markdown(f'<div class="user-message">👤 {msg["text"]}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="ai-message">🤖 {msg["text"]}</div>', unsafe_allow_html=True)
 
-            st.markdown("<div class='glass' style='margin-top:16px;'><h3>Recommended</h3></div>", unsafe_allow_html=True)
-            st.write("1. Finish the highest-value task first.")
-            st.write("2. Take a break every 90 minutes.")
-            st.write("3. End the day with a light review.")
+    user_query = st.text_input(
+        "Ask LifeOS AI:",
+        placeholder="e.g. What should I prioritize today? How can I improve my focus?",
+        label_visibility="collapsed"
+    )
 
-    elif st.session_state.page == "Plan Day":
-        st.markdown("<div class='glass'><h3>Optimized Schedule</h3></div>", unsafe_allow_html=True)
-        schedule = [
-            ("08:00", "Wake, hydrate, stretch"),
-            ("08:30", "Plan top 3 priorities"),
-            ("09:00", "Deep work block"),
-            ("10:30", "Short break"),
-            ("11:00", "Second focus block"),
-            ("13:00", "Lunch and reset"),
-            ("18:30", "Workout"),
-            ("21:30", "Wind down and sleep prep"),
-        ]
-        for t, task in schedule:
-            st.write(f"• {t} — {task}")
+    if st.button("🚀 Send"):
+        if not user_query.strip():
+            st.warning("Please enter a question.")
+        else:
+            context = build_ai_context()
+            ai_response = ask_ai_assistant(context, user_query)
 
-    elif st.session_state.page == "Goals":
-        for g in s["goals"]:
-            st.markdown(
-                f"<div class='glass'><div class='label'>{g['title']}</div><div class='small'>{g['next']}</div></div>",
-                unsafe_allow_html=True,
-            )
-            st.progress(g["progress"] / 100)
+            s["chat_history"].append({"role": "user", "text": user_query})
+            s["chat_history"].append({"role": "assistant", "text": ai_response})
 
-    elif st.session_state.page == "Memory":
-        st.markdown("<div class='glass'><h3>Personal Knowledge</h3></div>", unsafe_allow_html=True)
-        for m in s["memory"]:
-            st.markdown(f"<span class='chip'>{m}</span>", unsafe_allow_html=True)
+            st.rerun()
 
-    elif st.session_state.page == "Voice Agent":
-        st.markdown(
-            "<div class='glass'><h3>Voice Agent</h3><p class='small'>Type a voice-style command: plan my day, what should I focus on, remind me to rest, sleep plan, wearable status, fridge meal help.</p></div>",
-            unsafe_allow_html=True,
+    if st.button("🧹 Clear Chat"):
+        s["chat_history"] = []
+        st.rerun()
+
+    if not OPENAI_API_KEY:
+        st.info(
+            "ℹ️ AI assistant is disabled because OPENAI_API_KEY is not set. "
+            "Set it to get super AI advice."
         )
-        command = st.text_input("Enter voice command", placeholder="e.g. plan my day", key="voice_command")
-        run = st.button("Run command", type="primary")
-        if run and command:
-            s["last_command"] = command
-            s["agent_reply"] = agent_response(command)
-        if s["last_command"]:
-            st.info(f"You said: {s['last_command']}")
-        if s["agent_reply"]:
-            st.success(s["agent_reply"])
 
-    elif st.session_state.page == "Integrations":
-        st.markdown("<div class='glass'><h3>Integrations</h3></div>", unsafe_allow_html=True)
-        st.write("Wearable and phone data should be connected through user consent and external providers.")
-        provider = st.selectbox("Wearable source", ["None", "Apple Health", "Fitbit", "Garmin", "Oura", "Whoop", "Terra API Demo"])
-        if st.button("Connect wearable"):
-            if provider != "None":
-                s["wearable_connected"] = True
-                s["wearable_source"] = provider
-                st.success(f"Connected to {provider}.")
-            else:
-                st.warning("Choose a source first.")
+st.markdown("---")
 
-        st.markdown("<div class='glass' style='margin-top:16px;'><h3>User data hooks</h3></div>", unsafe_allow_html=True)
-        st.write("• Calendar sync placeholder")
-        st.write("• Sleep and activity placeholder")
-        st.write("• Meal/fridge input placeholder")
-        st.write("• Phone activity summary placeholder")
+# Row 2: Tasks
+st.markdown('<div class="section-title">➕ Add & Manage Tasks</div>', unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.subheader("🧠 LifeOS Brain")
+col_add1, col_add2, col_add3 = st.columns([2, 1, 1])
 
-    if st.button("Generate AI Advice", type="primary"):
-        st.success("""
-🧠 Daily Summary:
-Focus levels are good today.
+with col_add1:
+    new_task = st.text_input("Task Name", placeholder="e.g. Write report")
 
-🎯 Top Priority:
-Complete your Deep Work Sprint.
+with col_add2:
+    task_priority = st.selectbox(
+        "Priority",
+        ["high", "medium", "low"],
+        index=1
+    )
 
-💪 Health Suggestion:
-Take a 20-minute walk.
+with col_add3:
+    task_time = st.selectbox(
+        "Time",
+        ["Today", "Tomorrow", "This Week"],
+        index=0
+    )
 
-⚡ Productivity Tip:
-Work in one 90-minute distraction-free block.
-""")
+if st.button("➕ Add Task"):
+    if new_task.strip():
+        s["tasks"].append({
+            "task": new_task.strip(),
+            "time": task_time,
+            "status": "upcoming",
+            "priority": task_priority
+        })
+        st.success("Task added!")
+        st.rerun()
+    else:
+        st.warning("Please enter a task name.")
 
-    life_score = (s["mood"] * 10 + s["focus"] + s["sleep"] * 10) / 3
+st.markdown('<br>', unsafe_allow_html=True)
 
-    st.title("🧠 LifeOS")
-    st.metric("🔥 Life Score", round(life_score))
+if s["tasks"]:
+    st.markdown('<div class="section-title">📋 Your Tasks</div>', unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("⚡ Focus", s["focus"])
-    with col2:
-        st.metric("😊 Mood", s["mood"])
-    with col3:
-        st.metric("😴 Sleep", s["sleep"])
+    for i, t in reversed(list(zip(range(len(s["tasks"])), s["tasks"]))):
+        idx = t["task"]  # using task text as key (simple approach)
+
+        status_class = "completed" if t["status"] == "completed" else "upcoming"
+
+        st.markdown(
+            f"""
+            <div class="task-item {status_class}">
+                <div>
+                    <strong>{t['task']}</strong>
+                    <span style="color:#9aa0a6; margin-left:0.6rem;">
+                        ({t['time']}, priority: {t['priority']})
+                    </span>
+                </div>
+                <div>
+                    {st.button("✅ Complete", key=f"complete_{i}") if t['status'] != 'completed' else ''}
+                    {st.button("🗑️ Delete", key=f"delete_{i}")}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # Handle complete/delete
+        if st.session_state.get(f"complete_{i}", False) and t["status"] != "completed":
+            t["status"] = "completed"
+            st.rerun()
+
+        if st.session_state.get(f"delete_{i}", False):
+            s["tasks"].pop(i)
+            st.rerun()
+else:
+    st.info("📭 No tasks yet. Add your first task above.")
+
+st.markdown("---")
+
+# Row 3: History (last 7 days)
+st.markdown('<div class="section-title">📈 Last 7 Days History</div>', unsafe_allow_html=True)
+
+if s["history"]:
+    history_last_7 = sorted(
+        [h for h in s["history"] if h["date"] >= (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")],
+        key=lambda x: x["date"]
+    )
+
+    if history_last_7:
+        data = {
+            "Date": [h["date"] for h in history_last_7],
+            "Sleep (h)": [h["sleep"] for h in history_last_7],
+            "Focus (%)": [h["focus"] for h in history_last_7],
+            "Mood (1–10)": [h["mood"] for h in history_last_7],
+            "Screen (h)": [h["screen"] for h in history_last_7],
+            "Life Score": [h["life_score"] for h in history_last_7],
+        }
+
+        st.dataframe(data, use_container_width=True)
+    else:
+        st.info("No data for the last 7 days yet. Save daily snapshots to build history.")
+else:
+    st.info("No history yet. Save daily snapshots to build trends.")
