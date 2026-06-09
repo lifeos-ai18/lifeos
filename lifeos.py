@@ -13,7 +13,7 @@ layout="wide"
 
 # -----------------------
 
- "xp" not in st.session_state:
+"xp" not in st.session_state:
 st.session_state.xp = 0
 
  "missions" not in st.session_state:
