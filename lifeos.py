@@ -12,7 +12,6 @@ layout="wide"
 # Session State
 
 # -----------------------
-
 "xp" not in st.session_state:
 st.session_state.xp = 0
 
