@@ -7,8 +7,6 @@ page_icon="🧠",
 layout="wide"
 )
 
-# Sidebar Menu
-
 menu = st.sidebar.radio(
 "LifeOS",
 ["Dashboard", "Colum AI", "Missions"]
@@ -17,16 +15,12 @@ menu = st.sidebar.radio(
 st.title("🧠 LifeOS")
 st.subheader("Powered by Colum AI")
 
-# User Data
-
 name = st.text_input("Name", "Kavish")
 sleep = st.slider("Sleep Hours", 0, 12, 7)
 focus = st.slider("Focus %", 0, 100, 60)
 mood = st.slider("Mood /10", 0, 10, 7)
 
 life_score = int((sleep * 10 + focus + mood * 10) / 3)
-
-# Dashboard
 
 if menu == "Dashboard":
 
@@ -44,8 +38,6 @@ with col2:
 with col3:
     st.metric("Mood", f"{mood}/10")
 ```
-
-# Colum AI
 
 elif menu == "Colum AI":
 
@@ -81,8 +73,6 @@ if st.button("Send") and prompt:
     except Exception as e:
         st.error(f"Ollama Error: {e}")
 ```
-
-# Missions
 
 elif menu == "Missions":
 
