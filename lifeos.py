@@ -12,10 +12,11 @@ layout="wide"
 # Session State
 
 # -----------------------
-"xp" not in st.session_state:
+
+if "xp" not in st.session_state:
 st.session_state.xp = 0
 
- "missions" not in st.session_state:
+if "missions" not in st.session_state:
 st.session_state.missions = []
 
 # -----------------------
